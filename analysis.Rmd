@@ -1,0 +1,730 @@
+---
+title: "KHFA / SARA service readiness "
+author: "Population Health"
+date: "September 08, 2021"
+output:
+  rmdformats::readthedown:
+    highlight: pygments
+    toc_depth: 5
+    number_sections: true
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: true
+---
+
+
+
+```{r setup, include=FALSE}
+options(java.parameters = "-Xmx15g")
+
+knitr::opts_chunk$set(warning=FALSE,
+                      message=FALSE,
+                      echo=F,
+                      #dpi=96,
+                     # fig.width=7,# fig.height=4, # Default figure widths
+                     # dev="png", #dev.args=list(type="cairo"), # The png device
+                      # Change to dev="postscript" if you want the EPS-files
+                      # for submitting. Also remove the dev.args() as the postscript
+                      # doesn't accept the type="cairo" argument.
+                      error=FALSE)
+ 
+# Evaluate the figure caption after the plot
+#knitr::opts_knit$set(eval.after='fig.cap')
+ 
+# Use the table counter that the htmlTable() provides
+options(table_counter = TRUE)
+ 
+# Use the figCapNo() with roman letters
+#options(fig_caption_no_roman = TRUE)
+#options(kableExtra.latex.load_packages = F)
+
+# Then install the Grmd-package by running below code:
+#devtools::install_github("gforge/Grmd")
+
+
+# function to install missing packages
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE, repos='http://cran.rstudio.com/')
+  sapply(pkg, require, character.only = TRUE)
+}
+
+#install.packages('package_name', dependencies=TRUE, repos='http://cran.rstudio.com/')
+
+packages =c( "dplyr",  "readxl","Hmisc","Gmisc", "magrittr", "flextable", "MASS", "tidyverse", "caret", "knitr", "kableExtra","xtable", "stargazer", "ggpubr", "haven", "PerformanceAnalytics", "naniar", "gridExtra", "ggthemes", "TSstudio", "pacman", "readr", "lime", "highcharter", "pROC", "gtsummary", "nFactors", "mctest", "car")
+
+ipak(packages)
+
+pacman::p_load(breakDown, DALEX, DT, finalfit, h2o, inspectdf, missRanger, skimr, 
+    tidyverse, xray)
+
+# packages not pubished
+#devtools::install_github("kassambara/easyGgplot2")
+library(easyGgplot2)
+
+# packages not pubished
+#devtools::install_github('cttobin/ggthemr')
+#library(ggthemr)
+
+
+select = dplyr::select; summarize = dplyr::summarize; rename = dplyr::rename; mutate = dplyr::mutate;
+
+#ggthemr("flat")
+
+
+#AMAZING: https://rpubs.com/muntasir_masum/tableoutput
+# To have a compact table (not necessary if you need a compact table or can be postprocessed)
+set_gtsummary_theme(theme_gtsummary_compact(set_theme = TRUE))
+
+#source("unbalanced_functions.R")
+source("table1_utils.R")
+
+
+#h2o.init(ip = 'localhost', port = 7070, nthreads = -1,max_mem_size = "15G")
+```
+
+```{r fig.align='center', cache=T, fig.width=6, warning=FALSE}
+source("import_data.R")
+```
+         
+<center>
+
+<h2>
+
+Analysis Report
+
+</h2>
+<h4>
+
+By:
+
+Kelly, Caitrin Maura,
+Kimaina Allan <kimkenal@gmail.com>,
+Michael Kibiwott <mkibiwott@ampathplus.or.ke>,
+jamilalariik <jamilalariik@gmail.com>
+Linner Soy <linnersoy22@gmail.com>,
+ORERA BODO <orerabodo@gmail.com>,
+Shadrack Mutai <mailshadrack@gmail.com>,
+Cornelius Kiptoo <corny.kip@gmail.com>,
+Turissini, Matthew Louis" <mturissi@iu.edu>
+David Kiptoo
+
+</h4>
+
+</center>
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+to_YesNo <- function(x, na.rm=FALSE) (as.factor(if_else(x==1,"Yes","No")))
+base_var=c('facility_code', 'facility_name.factor','facility_type.factor','level')
+data = data%>%mutate(
+   level=as.factor(
+      case_when(
+              facility_type.factor == 'Dispensary' ~ "Level 2",
+              facility_type.factor == 'Health Centre' ~ "Level 3",
+              facility_type.factor == 'Sub County Hospital' ~ "Level 4",
+              TRUE ~ 'Level *'
+            )
+   )
+)%>%filter(facility_code!='16029')
+
+```
+ 
+# Background
+
+
+## Primary Analysis Goal
+
+Determine the general service readiness within each of the domains (as defined by the SARA tool) For Bunyala Subcounty as indicated in the KHFA survey from March 2020. 
+
+## Secondary Analysis Goal
+
+How does service readiness impact service availability using the UHC framework indexes? Look at the WHO Kenya UHC indices included in community baseline survey, and specific service readniess indicators that may impact them (ex stocks of immunizations, diarrhea and Pneumonia tx, stock of family planning supplies, etc)
+
+## Additional Areas of analysis:
+
+Service specific areas (ex maternal health came up a lot during FGDs, may want to look into SARA measures and KHFA service specific areas for maternal health or other areas).
+
+
+# Basic Amenities
+
+
+> **power:** combine with question 2028 on uninterrupted power; in order to get "credit"for power indicator need to have both Q2025=YES, and Q2035=1 or =2
+
+> **Improved water source:** to count it for improved water source, must have 2050=1,13,4,9,2 AND question 2053=2 (NO)
+
+> **room with privacy:** 2230=3(BOTH AUDITORY AND VISUAL PRIVACY) --> Is there a room with auditory and visual privacy available for patient consultations?
+
+> **adequate sanitation**  Require both male and female latrines to be functioning If either male or female are not functioning or do not meet the criteria for improved sanitation, indicator is counted as 0
+
+> **communication equipment** 2000 only count indicator if response is 1, YES FUNCTION
+
+> **access to computer & internet** 2002 only include indicator if 2002=1, AND 2004=1
+
+> **Emergency transportation** to get credit for this indicator, 2133=1 OR 2 AND 2134=YES/1 AND 2135=1/YES
+
+> **Scoring:** Domain score = Mean score of items as percentage: mean*100
+
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('power', 'improved_water_source', 'room_with_privacy', 'adequate_sanitation_toilet', 'communication_equipment','computer_internet','emergency_transportation')
+# define non-SARA
+other_var=c()
+# define score vars
+score_var=c('BA_SARA_score')
+# combine both sara and non-sara
+all_var=c(aggr_var,other_var)
+# indicator calculations
+basic_amenities.df = data%>%mutate( 
+   
+   # Step 0: clean data
+   available_functioning_femalet=replace_na(available_functioning_femalet, 9999),
+   have_functioning_computer=replace_na(have_functioning_computer, 9999),
+   is_there_access_to_email_o=replace_na(is_there_access_to_email_o, 9999),
+   
+   # Step 1: aggregate SARA components
+   power = if_else((does_this_facility_have_po==1 & during_the_past_7_days_was%in%c(1,2)) ,1,0),
+   improved_water_source = if_else((water_shortage_past7days==2 & what_is_the_most_commonly%in%c(1,13,4,9,2)) ,1,0),
+   room_with_privacy=  if_else(auditory_visual_privacy==3,1,0),
+   adequate_sanitation_toilet=  if_else(male_toilet___8!=1 & available_functioning_malet___1==1& female_toilet!=9 & available_functioning_femalet==1,1,0),
+   communication_equipment= if_else(formal_means_communicating%in%c(1),1,0),
+   computer_internet=if_else(have_functioning_computer==1 & is_there_access_to_email_o==1,1,0),
+   emergency_transportation=if_else((driver_available==1 & vehicle_available==1 &  emergency_transport%in%c(1,2)) ,1,0)
+   
+   # Step 2: aggregate non-SARA components
+   # No non-sara for amenities
+   
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      BA_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) )
+   )%>%mutate_at( all_var, to_YesNo)
+
+
+```
+
+* <span style="color:red"> Issue 1: </span>  Check on facility level coding --> might not be accurate
+* <span style="color:red"> Issue 2: </span> Improved water source --> manual not clear, I have considered PIPED INTO FACILITY  SURFACE WATER (RIVER/DAM/LAKE/POND) BOREHOLE  RAINWATER  PIPED ONTO FACILITY GROUNDS  as improved water sources
+*  <span style="color:red"> Issue 3:  </span>  Two   Mukhobola records????
+
+## SARA Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(basic_amenities.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'BA_SARA_score'))
+```
+
+
+* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
+
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+basic_amenities.tbl <- 
+  gtsummary::tbl_summary(
+    basic_amenities.df%>%select('level', c(aggr_var),'BA_SARA_score'),
+    by = level, # split table by group
+    type = list('BA_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Basic Amenities (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+basic_amenities.tbl
+
+```
+
+## Non-SARA (Extra) Indicators Tabulation
+
+> We do not have
+
+
+
+# Basic Equipments
+
+
+> **Aggregating:** give credit for item if =1 or 2 (observed or reported) AND part B=1 YES, functioning
+
+> **Scoring:** Domain score = Mean score of items as percentage: N/6*100
+
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('adult_weighing_scale', 'child_weighing_scale', 'thermometer', 'stethoscope', 'blood_pressure_apparatus','light_source')
+# define non-SARA
+other_var=c('pulse_oximeter', 'adult_self_inflating_bag_and_mas', 'paed_self_inflating_bag_and_mas', 'neonatal_bag_and_mask',
+            'defibrillator', 'ekg_machine', 'electrodes_and_leads_EKG', 'oxygen_currently_in_the_unit', 'oxygen_called_for_from_a_central_location',
+            'central_piped_oxygen_supp','oxygen_concentrator','oxygen_tank_cylinder', 'flowmeter_for_oxygen_sourc', 'oxygen_delivery_apparatus')
+# define score vars
+score_var=c('BE_SARA_score','BE_SARAExtra_score')
+# combine both sara and non-sara
+all_var=c(aggr_var,other_var)
+# indicator calculations
+basic_equipment.df = data%>%mutate( 
+   # Step 0: clean daata
+   neonatal_bag_and_mask_been_unavailable=replace_na(neonatal_bag_and_mask_been_unavailable, 0),
+   
+   # Step 1: aggregate SARA components
+   adult_weighing_scale = if_else((adult_weighing_scale_digit___1==1 | adult_weighing_scale_digit___2==1) & adult_weighing_scale_digit___4==1,1,0),
+   child_weighing_scale = if_else((child_weighing_scale_250_g___1==1 | child_weighing_scale_250_g___2==1) & child_weighing_scale_250_g___4==1,1,0),
+   thermometer = if_else((thermometer___1==1 | thermometer___2==1) & thermometer___4==1,1,0),
+   stethoscope = if_else((stethoscope___1==1 | stethoscope___2==1) & stethoscope___4==1,1,0),
+   blood_pressure_apparatus = if_else((blood_pressure_apparatus___1==1 | blood_pressure_apparatus___2==1) & blood_pressure_apparatus___4==1,1,0),
+   light_source  = if_else((light_source_that_can_be_p___1==1 | light_source_that_can_be_p___2==1) & light_source_that_can_be_p___4==1,1,0),
+   
+   # Step 2: aggregate non-SARA components
+   pulse_oximeter  = if_else((emergency_pulse_oximeter___1==1 | emergency_pulse_oximeter___2==1) & emergency_pulse_oximeter___4==1,1,0),
+   adult_self_inflating_bag_and_mas  = if_else((adult_self_inflating_bag_and_mas___1==1 | adult_self_inflating_bag_and_mas___2==1) & adult_self_inflating_bag_and_mas___4==1,1,0),
+   paed_self_inflating_bag_and_mas  = if_else((paed_self_inflating_bag_and_mas___1==1 | paed_self_inflating_bag_and_mas___2==1) & paed_self_inflating_bag_and_mas___4==1,1,0),
+   neonatal_bag_and_mask  = neonatal_bag_and_mask_been_unavailable,
+   defibrillator  = if_else((defibrillator___1==1 | defibrillator___2==1) & defibrillator___4==1,1,0),
+   ekg_machine  = if_else((ekg_machine___1==1 | ekg_machine___2==1) & ekg_machine___4==1,1,0),
+   electrodes_and_leads_EKG  = if_else((electrodes_and_leads_for_e___1==1 | electrodes_and_leads_for_e___2==1) & electrodes_and_leads_for_e___4==1,1,0),
+   oxygen_currently_in_the_unit  = oxygen_currently_in_the_unit,
+   oxygen_called_for_from_a_central_location=oxygen_called_for_from_a_central_location,
+   central_piped_oxygen_supp  = if_else((central_piped_oxygen_suppl___1==1 | central_piped_oxygen_suppl___2==1) & central_piped_oxygen_suppl___4==1,1,0),
+   oxygen_concentrator  = if_else((oxygen_concentrator___1==1 | oxygen_concentrator___2==1) & oxygen_concentrator___4==1,1,0),
+   oxygen_tank_cylinder  = if_else((oxygen_tank_cylinder_with___1==1 | oxygen_tank_cylinder_with___2==1) & oxygen_tank_cylinder_with___4==1,1,0),
+   flowmeter_for_oxygen_sourc  = if_else((flowmeter_for_oxygen_sourc___1==1 | flowmeter_for_oxygen_sourc___2==1) & flowmeter_for_oxygen_sourc___4==1,1,0),
+   oxygen_delivery_apparatus  = if_else((oxygen_delivery_apparatus___1==1 | oxygen_delivery_apparatus___2==1) & oxygen_delivery_apparatus___4==1,1,0),
+   
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      BE_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) ),
+      BE_SARAExtra_score=as.numeric( round((select(.,all_var) %>% rowMeans(na.rm=T))*100,1))
+   )%>%mutate_at( all_var, to_YesNo)
+
+
+```
+
+
+* <span style="color:red"> Issue 1: </span> Over 50% of SARA question codes not in the dataset --> Had to fallback to using typed out questions. 
+
+## SARA Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(basic_equipment.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'BE_SARA_score'))
+```
+
+* <span style="color:red"> Issue 2: </span>  Khajula has 0 scores across all because of part B, i,e., `part B=1 YES, functioning`
+* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
+*  <span style="color:red"> Issue 3:  </span>  Two   Mukhobola records????
+
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+basic_equipment.tbl <- 
+  gtsummary::tbl_summary(
+    basic_equipment.df%>%select('level', c(aggr_var),'BE_SARA_score'),
+    by = level, # split table by group
+    type = list('BE_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Basic Equipments (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+basic_equipment.tbl
+
+```
+
+## Non-SARA (Extra) Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(basic_equipment.df%>%select('facility_name.factor','facility_type.factor', 'level', c(all_var),'BE_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+basic_equipment2.tbl <- 
+  gtsummary::tbl_summary(
+    basic_equipment.df%>%select('level', c(all_var),'BE_SARAExtra_score'),
+    by = level, # split table by group
+    type = list('BE_SARAExtra_score' ~ "continuous2", all_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Basic Equipments (Extra Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,all_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+basic_equipment2.tbl
+
+```
+
+
+
+
+# Diagnostic Capacity
+
+
+> **Aggregating:** count the indicator as present (1) if observed and function, or reported avialable and functional (Responses 1, 2)
+do not count the indicator (0)if not functional, not available today, or never available (3, 4, 5)
+
+> **Scoring:** Domain score = Mean score of items as percentage: N/8*100
+
+
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('haemoglobin', 'blood_glucose', 'malaria_diagnostic_capacity', 'urine_dipstick_protein', 'urine_dipstick_glucose','HIV_diagnostic_capacity','syphilis_rapid_test','urine_test_for_preg')
+# define non-SARA
+other_var=c('UEC', 'hemoglobin_a1c', 'geneXpert', 'x_ray', 'ultrasound', 'ECG')
+# define score vars
+score_var=c('DC_SARA_score','DC_SARAExtra_score')
+# combine both sara and non-sara
+all_var=c(aggr_var,other_var)
+# indicator calculations
+diagnostic_capacity.df = data%>%mutate( 
+   # Step 0: clean daata
+   #neonatal_bag_and_mask_been_unavailable=replace_na(neonatal_bag_and_mask_been_unavailable, 0),
+   
+   # Step 1: aggregate SARA components
+   haemoglobin = if_else((colorimeter_or_haemoglobin___1==1 | colorimeter_or_haemoglobin___2==1) | 
+                                    (hemocue___1==1 | hemocue___2==1) |
+                                     ( haematology_analyser___4==1 | haematology_analyser___5==1) |
+                                     (any_tests_of_blood_white_a___4==1 | any_tests_of_blood_white_a___5==1) |
+                                    ( other_tests_for_full_blood___4==1 | other_tests_for_full_blood___5==1) |
+                                    ( other_tests_for_anemia___4==1 | other_tests_for_anemia___5==1)  ,1,0),
+   blood_glucose = if_else((glucometer___1==1 | glucometer___2==1 | glucometer_test_strips_dis___1==1 | glucometer_test_strips_dis___2==1),1,0),
+   malaria_diagnostic_capacity = if_else((malaria_rapid_diagnostic_t___1==1 | malaria_rapid_d_kits%in%(c(1,2))),1,0),
+   urine_dipstick_protein = if_else( urine_dipstick%in%(c(1,3)) | (urine_dipstick_3___1==1 | urine_dipstick_3___3==1) | (urine_dipstick_9___1==1 | urine_dipstick_9___3==1),1,0),
+   urine_dipstick_glucose = if_else( urine_dipstick%in%(c(1,3)) | (urine_dipstick_3___1==1 | urine_dipstick_3___3==1) | (urine_dipstick_9___1==1 | urine_dipstick_9___3==1),1,0),
+   HIV_diagnostic_capacity = if_else( rapid_hiv_testing%in%(c(1,3)) | (hiv_rapid_test___1==1 | hiv_rapid_test___3==1),1,0),
+   syphilis_rapid_test = if_else( (syphilis_rapid_test___1==1 | syphilis_rapid_test___3==1),1,0),
+   urine_test_for_preg = if_else( (urine_rapid_tests_for_preg___1==1 | urine_rapid_tests_for_preg___3==1),1,0), 
+  
+   
+   # Step 2: aggregate non-SARA components
+   UEC  = if_else((assay_kit_s_renal_funct___4==1 | assay_kit_s_renal_funct___5==1),1,0), # check if this is same as UEC
+   hemoglobin_a1c  = if_else((hemoglobin_a1c_rapid_test___1==1 | hemoglobin_a1c_rapid_test___3==1),1,0), # check if a1c means hemoglobin_a1c?
+   geneXpert  = if_else((genexpert_4_module_unit_wi___4==1 | genexpert_4_module_unit_wi___5==1),1,0), # must catridge be available?
+   x_ray  = if_else((x_ray___1==1 & x_ray___3==1),1,0), 
+   ultrasound  = if_else((ultrasound___1==1 & ultrasound___3==1),1,0), 
+   ECG  = if_else((electrocardiogram_ecg___1==1 & electrocardiogram_ecg___3==1),1,0), 
+
+   # TODO: ***Jamil to add
+   
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      DC_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) ),
+      DC_SARAExtra_score=as.numeric( round((select(.,all_var) %>% rowMeans(na.rm=T))*100,1))
+   )%>%mutate_at( all_var, to_YesNo)
+
+```
+
+
+* <span style="color:red"> Issue 1: </span> UEC - Urea Electrolytes and Creatinine ? using assay_kit_s_renal_func variable
+
+## SARA Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(diagnostic_capacity.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'DC_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+diagnostic_capacity.tbl <- 
+  gtsummary::tbl_summary(
+    diagnostic_capacity.df%>%select('level', c(aggr_var),'DC_SARA_score'),
+    by = level, # split table by group
+    type = list('DC_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Diagnostic Capacity (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+diagnostic_capacity.tbl
+
+```
+
+## Non-SARA (Extra) Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(diagnostic_capacity.df%>%select('facility_name.factor','facility_type.factor', 'level', c(all_var),'DC_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+diagnostic_capacity2.tbl <- 
+  gtsummary::tbl_summary(
+    diagnostic_capacity.df%>%select('level', c(all_var),'DC_SARAExtra_score'),
+    by = level, # split table by group
+    type = list('DC_SARAExtra_score' ~ "continuous2", all_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Diagnostic Capacity (Extra Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,all_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+diagnostic_capacity2.tbl
+
+```
+
+
+
+
+
+# Precautions for infection prevention
+
+--> TODO:
+
+
+# Essential Medicines
+
+--> TODO:
+
+# Maternal health readiness
+
+> **maternity servies:** resposes of Yes (1) to any 4500 OR 4501 OR 4502 OR 4504 OR KEN4504
+
+> **routine delivery practice:** resposes of Yes (1) to 4510-01 AND A4510-02 AND 4510-03
+
+> **blood transfusions:** resposes of Yes (1) to 6000	 AND 6003!=1
+
+> **cesarian section services**  resposes of Yes (1) t 5030 AND 5031 AND 5032	AND 5033
+
+> **drugs and commoditiies for maternal care** to count for this indicator, must have in stock IV infusion set(4571-16 AND eitehr dextrose (17),  OR Sodum Choride (18) OR other plasma expander (19(
+
+
+
+> **Scoring:** Domain score = Mean score of items as percentage: mean*100
+
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('maternity_servies', 'routine_delivery', 'blood_transfusions', 'cesarian_section', 'maternal_care_drugs')
+# define non-SARA
+other_var=c()
+# define score vars
+score_var=c('MH_SARA_score')
+# combine both sara and non-sara
+all_var=c(aggr_var,other_var)
+# indicator calculations
+marternal_health.df = data%>%mutate( 
+   
+   # Step 0: clean data
+   offer_blood_transfusion=replace_na(offer_blood_transfusion, 9999),
+   have_there_been_any_interr=replace_na(have_there_been_any_interr, 9999),
+   facility_conduct_cs=replace_na(facility_conduct_cs, 9999),
+   professional_for_cs=replace_na(professional_for_cs, 9999),
+   profesional_cs_in_today=replace_na(profesional_cs_in_today, 9999),
+   have_anaesthetist=replace_na(have_anaesthetist, 9999),
+   
+   # Step 1: aggregate SARA components
+   maternity_servies = if_else((offer_delivery_services==1 | bemoc==1 | cemoc==1 | wholeday_delivery_service==1 | basic_maternity_care%in%c(1,2)) ,1,0),
+   routine_delivery = if_else((active_management_of_third==1 & administration_of_oxytocin==1 & monitor_and_manage_labour==1 ) ,1,0),
+   blood_transfusions = if_else((offer_blood_transfusion==1 & have_there_been_any_interr!=1 ) ,1,0),
+   cesarian_section= if_else((facility_conduct_cs==1 & professional_for_cs==1 & profesional_cs_in_today==1 & have_anaesthetist==1) ,1,0),
+   maternal_care_drugs =  if_else(((antic_eye_ointment_fo___1==1 | antic_eye_ointment_fo___3==1) & ( maium_sulphate_injecti___1==1 |  maium_sulphate_injecti___3==1) &
+                                   (skinsinfectant___1==1 | skinsinfectant___3==1 ) &  (intra_infusion_set___1==1 |  intra_infusion_set___3==1) &
+                                      (dse_and_water_5_d5w_i___1==1 |  dse_and_water_5_d5w_i___3==1 |  sochloride_09ns_intra___1==1|  sochloride_09ns_intra___3==1
+                                       |  other_a_expander_such___1==1|  other_a_expander_such___3==1)
+                                   ) ,1,0)
+   
+   # Step 2: aggregate non-SARA components
+   # No non-sara for amenities
+   
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      MH_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) )
+   )%>%mutate_at( all_var, to_YesNo)
+
+
+```
+
+* <span style="color:red"> Issue 1: </span>  Check on facility level coding --> might not be accurate
+* <span style="color:red"> Issue 2: </span> routine delivery practice  --> is it OR / AND : admn of oxytocin after birth, use of a partograph
+*<span style="color:red"> Issue 3: </span>  what did we say about =REPORTED AVAILABLE BUT NOT SEEN
+*  <span style="color:red"> Issue 4:  </span>  Two   Mukhobola records????
+
+*  <span style="color:red"> Issue 5:  have there bee ninterruptions on availability of blood during past 3 months --> fails for all
+*  <span style="color:red"> Issue 5:  professional to doc C-section avaialble 24 hrs? --> fails for all
+
+## SARA Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(marternal_health.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'MH_SARA_score'))
+```
+
+
+* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
+
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+marternal_health.tbl <- 
+  gtsummary::tbl_summary(
+    marternal_health.df%>%select('level', c(aggr_var),'MH_SARA_score'),
+    by = level, # split table by group
+    type = list('MH_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Maternal Health (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+marternal_health.tbl
+
+```
+
+## Non-SARA (Extra) Indicators Tabulation
+
+> We do not have
+
+
+
+
+# Overall Service Readiness
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+overall_var=c('BE_SARA_score','BA_SARA_score', 'MH_SARA_score')
+overall.df = basic_equipment.df%>%
+         inner_join(basic_amenities.df%>%select('facility_code','BA_SARA_score'),by='facility_code')%>%
+         inner_join(marternal_health.df%>%select('facility_code','MH_SARA_score'),by='facility_code')%>%
+         inner_join(diagnostic_capacity.df%>%select('facility_code','DC_SARA_score'),by='facility_code')%>%
+         select('facility_name.factor','facility_type.factor', 'level', 'BE_SARA_score', 'BA_SARA_score', 'MH_SARA_score', 'DC_SARA_score')%>%
+         mutate( 
+               Overall_SARA_score=as.numeric( round((select(.,overall_var) %>% rowMeans(na.rm=T)),1) )
+         )
+kable(overall.df)
+```
+
+## Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+overall.tbl <- 
+  gtsummary::tbl_summary(
+    overall.df%>%select('level', c(overall_var),'Overall_SARA_score'),
+    by = level, # split table by group
+    type = list(c(overall_var,'Overall_SARA_score')~ "continuous2"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption(" Overall Service Readiness Score | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c('Overall_SARA_score'), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(overall_var,'Overall_SARA_score'), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+overall.tbl
+
+```
+
+
+# Appendix
