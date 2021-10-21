@@ -125,6 +125,14 @@ data = data%>%mutate(
               facility_type.factor == 'Sub County Hospital' ~ "Level 4",
               TRUE ~ 'Level *'
             )
+   ),
+   level_num=as.numeric(
+      case_when(
+              facility_type.factor == 'Dispensary' ~2,
+              facility_type.factor == 'Health Centre' ~ 3,
+              facility_type.factor == 'Sub County Hospital' ~ 4,
+              TRUE ~ 0
+            )
    )
 )%>%filter(facility_code!='16029')
 
@@ -177,7 +185,7 @@ other_var=c()
 # define score vars
 score_var=c('BA_SARA_score')
 # combine both sara and non-sara
-all_var=c(aggr_var,other_var)
+all_var=unique(c(aggr_var,other_var))
 # indicator calculations
 basic_amenities.df = data%>%mutate( 
    
@@ -206,9 +214,10 @@ basic_amenities.df = data%>%mutate(
 
 ```
 
-* <span style="color:red"> Issue 1: </span>  Check on facility level coding --> might not be accurate
 * <span style="color:red"> Issue 2: </span> Improved water source --> manual not clear, I have considered PIPED INTO FACILITY  SURFACE WATER (RIVER/DAM/LAKE/POND) BOREHOLE  RAINWATER  PIPED ONTO FACILITY GROUNDS  as improved water sources
-*  <span style="color:red"> Issue 3:  </span>  Two   Mukhobola records????
+
+Improved water sources as defined in the WHO SARA tool are:” Improved water source uses uniform definitions for safe water sources promoted by UNICEF. These include the following: Piped, public tap, standpipe, tubewell/borehole, protected dug well, protected spring, rain water “.  So looks like your coding also needs to include protected dug well, protected spring,…..I see there are other options listed on the survey so I guess I would consider them NOT improved
+
 
 ## SARA Indicators Tabulation
 
@@ -217,7 +226,7 @@ kable(basic_amenities.df%>%select('facility_name.factor','facility_type.factor',
 ```
 
 
-* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
+
 
 
 ### Disaggregation by facility level
@@ -280,7 +289,7 @@ other_var=c('pulse_oximeter', 'adult_self_inflating_bag_and_mas', 'paed_self_inf
 # define score vars
 score_var=c('BE_SARA_score','BE_SARAExtra_score')
 # combine both sara and non-sara
-all_var=c(aggr_var,other_var)
+all_var=unique(c(aggr_var,other_var))
 # indicator calculations
 basic_equipment.df = data%>%mutate( 
    # Step 0: clean daata
@@ -329,8 +338,7 @@ kable(basic_equipment.df%>%select('facility_name.factor','facility_type.factor',
 ```
 
 * <span style="color:red"> Issue 2: </span>  Khajula has 0 scores across all because of part B, i,e., `part B=1 YES, functioning`
-* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
-*  <span style="color:red"> Issue 3:  </span>  Two   Mukhobola records????
+
 
 
 ### Disaggregation by facility level
@@ -427,7 +435,7 @@ other_var=c('UEC', 'hemoglobin_a1c', 'geneXpert', 'x_ray', 'ultrasound', 'ECG')
 # define score vars
 score_var=c('DC_SARA_score','DC_SARAExtra_score')
 # combine both sara and non-sara
-all_var=c(aggr_var,other_var)
+all_var=unique(c(aggr_var,other_var))
 # indicator calculations
 diagnostic_capacity.df = data%>%mutate( 
    # Step 0: clean daata
@@ -550,14 +558,584 @@ diagnostic_capacity2.tbl
 
 
 
-# Precautions for infection prevention
+# Precautions for infection prevention (PIP)
 
---> TODO:
+![PIP1](pip1.png) 
+![PIP2](pip2.png) 
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('sharp_waste_final_disposal', 'infectious_waste_disposal', 'sharps_safety_box', 'waste_receptacle_bin', 'disinfectant','single_use_syringe','soap_water_alcohol','latex_glove')
+# define non-SARA
+other_var=c(   'covid_surgical_masks', 'covid_n95_face_masks', 'covid_protective_gow', 'covid_aprons', 
+   'covid_eye_protection', 'covid_gumboots_or_clogs', 'covid_hair_cover')
+# define score vars
+score_var=c('PIP_SARA_score','PIP_SARAExtra_score')
+# combine both sara and non-sara
+all_var=unique(c(aggr_var,other_var))
+# indicator calculations
+pip.df = data%>%mutate( 
+   # Step 0: clean daata
+   #neonatal_bag_and_mask_been_unavailable=replace_na(neonatal_bag_and_mask_been_unavailable, 0),
+   
+   # Step 1: aggregate SARA components
+  
+  sharp_waste_final_disposal = if_else( sharp_waste_disposal%in%(c(  5, 7, 9, 10, 11)) | 
+                                    (iincinerator_used%in%(c( 2,3) ) & incinerator_functioning==1 & fuel_for_the_incinerator==1), 1,0),
+  
+    
+  infectious_waste_disposal = if_else( (medical_waste_disposal==1 & sharp_waste_final_disposal==1 ) | medical_waste_disposal%in%(c(  5, 7, 9, 10, 11)) | 
+                                    (medical_waste_disposal%in%(c( 2,3) ) & incinerator_functioning==1 & fuel_for_the_incinerator==1), 1,0),
+  
+  # We will use OPD as a proxy for storage of sharps, indicative of other departmens and areas
+  sharps_safety_box= if_else( safety_box_for_sharps%in%(c(1,2)),1,0), # WHY NOT NON_OPD
+  
+  # Count if available in all
+  waste_receptacle_bin = if_else( does_the_waste_receptacle%in%(c(1,2)) & waste_receptacle_bin_with%in%(c(1,2)) # OPD
+                                  & oes_the_waste_receptacle%in%(c(1,2)) & waste_receptacle_bin_wit%in%(c(1,2)) # INFECTIOUS AND COMMUNICABLE DISEASES
+                                  #& infectious_waste%in%(c(1,2)) & plastic_bin%in%(c(1,2)) #DELIVERY AND NEWBORN CARE SERVICES
+                                  #& biological_waste%in%(c(1,2))& receptacle_bin_with%in%(c(1,2))#DELIVERY AND NEWBORN CARE SERVICES
+                                  #& s_doe_receptacl%in%(c(1,2)) & s_wacle_bin_wit%in%(c(1,2)) #23. EMERGENCY (AMBULANCE OR WALK-IN) SERVICES
+                                  #& dreceptacle%in%(c(1,2)) & wastbin_with%in%(c(1,2)) #23. EMERGENCY (AMBULANCE OR WALK-IN) SERVICES
+                                  & r_bin%in%(c(1,2)) & eeceptacle_bin_with%in%(c(1,2)) #25 SURGICAL SERVICES
+                                  & the_waste_receptacle%in%(c(1,2))  & e_waste_receptacle%in%(c(1,2)) #25 SURGICAL SERVICES
+      
+                                  ,1,0),
+  # Count if available in any: TODO: Confirm
+  disinfectant =  if_else( environmental_disinfectant%in%(c(1,2)) | envronmental_disinfectant%in%(c(1,2)) | 
+                            disinfectants%in%(c(1,2))
+                            ,1,0),
+  
+  #  Count  If it is available in any department/section TODO: I'm including also Emergency, e.t.c
+  single_use_syringe =  if_else( disposable_syringes%in%(c(1,2)) | disposable_syringes_with_d%in%(c(1,2)) | 
+                               diposable_syringes_with_d%in%(c(1,2)) | disposable_syringes_needle%in%(c(1,2)) |
+                               disp_syringes_with_d%in%(c(1,2)) | diringes_with_d%in%(c(1,2)) | 
+                               
+                              auto_disable_syring%in%(c(1,2)) | auto_disable_syringes%in%(c(1,2)) | aut_disable_syringes%in%(c(1,2)) |
+                              s_auto_disable_syringes_an%in%(c(1,2)) | auto_syringes%in%(c(1,2)) | ausyringes%in%(c(1,2)) 
+                             
+                            ,1,0),
+  
+  # Must be available in all the 4 departments (OPD, HIV, Obs and Newborn, Surgery area) TODO: I'm including also Emergency, e.t.c
+  soap_water_alcohol =  if_else( (clean_running_water%in%(c(1,2)) & (soap_bar_or_liquid%in%(c(1,2)) | alcohol_based_hand%in%(c(1,2)) ) ) &
+                                  (clean_running_water_piped%in%(c(1,2)) & (soap_bar_or_liquid_for_han%in%(c(1,2)) | alcohol_based_hand_rub_han%in%(c(1,2)) ) ) & 
+                                   (lean_running_water_piped%in%(c(1,2)) & (sap_bar_or_liquid_for_han%in%(c(1,2)) | acohol_based_handrub_hand%in%(c(1,2)) ) ) & 
+                                    (running_water%in%(c(1,2)) & (soap%in%(c(1,2)) | hand_sanitizer%in%(c(1,2)) ) ) &
+                                   (er_piped%in%(c(1,2)) & (p_or_liqui%in%(c(1,2)) | alcndrub%in%(c(1,2)) ) ) &
+                                   (c_running_water_piped%in%(c(1,2)) & (s_or_liquid_for_han%in%(c(1,2)) | abased_handrub%in%(c(1,2)) ) )
+     
+                            ,1,0),
+  
+  # Must be available in all the 4 departments (OPD, HIV, Obs and Newborn, Surgery area) TODO: I'm including also Emergency, e.t.c
+  latex_glove =  if_else( (disposable_latex_gloves_no%in%(c(1,2)) |disposable_latex_gloves_st%in%(c(1,2))) &
+                            (s_isposable_latex_gloves%in%(c(1,2))| isposable_latex_gloves_st%in%(c(1,2))) & 
+                            (gloves_nonsterile%in%(c(1,2))| latex_gloves_steril%in%(c(1,2))) &
+                            (s_diatex_gloves%in%(c(1,2))| dispo_gloves_st%in%(c(1,2))) & 
+                            (d_latex_gloves_no%in%(c(1,2))| d_latex_gloves_st%in%(c(1,2))) & 
+                            (disposable_latex_glove%in%(c(1,2)) |disposable_latex_gloves%in%(c(1,2))) 
+                            ,1,0),
+
+  #guidelines_precautions = NA, # Missing TODO --> Need 
+   # Step 2: aggregate non-SARA components
+   # We do not hava NON SARA
+   # TODO : We should consider COvid PPE here
+  
+   covid_surgical_masks= if_else( surgical_respiratory_masks%in%(c(1,2)) | surratory_masks%in%(c(1,2)) | 
+                               respiratory_masks%in%(c(1,2)) | surgical_respiratory%in%(c(1,2)) |
+                               surgical_masks_pharm%in%(c(1,2))
+                               
+                            ,1,0),
+  
+   covid_n95_face_masks= if_else( n95_face_masks%in%(c(1,2)) | n95%in%(c(1,2)) | 
+                               n95_masks%in%(c(1,2)) | n95_face_mask%in%(c(1,2)) |
+                               n95_face_masks_pharm%in%(c(1,2))
+                               
+                            ,1,0),
+  
+   covid_protective_gow= if_else( non_sterile_protective_gow%in%(c(1,2)) | non_tective_gow%in%(c(1,2)) | 
+                             ste%in%(c(1,2)) | sterile_gowns%in%(c(1,2)) |
+                               
+                             non_s_protective_gow%in%(c(1,2)) | gowns%in%(c(1,2)) |
+                                non_sterile_protective%in%(c(1,2)) | sterile_gown%in%(c(1,2)) |
+                                non_sterile_protect_pharm%in%(c(1,2)) | sterile_gowns_pharm%in%(c(1,2))
+                             
+                          ,1,0),
+  
+     covid_aprons= if_else( aprons%in%(c(1,2)) | as%in%(c(1,2)) | 
+                               apron%in%(c(1,2)) | overolls%in%(c(1,2)) |
+                               aprons_pharm%in%(c(1,2)) 
+                               
+                            ,1,0),
+  
+     covid_eye_protection= if_else( eye_protection_goggles_fac%in%(c(1,2)) | tion_goggles_fac%in%(c(1,2)) | 
+                               eye_protect%in%(c(1,2)) | eye_protection_goggles%in%(c(1,2)) |
+                               eye_protect_goggle_pharm%in%(c(1,2)) 
+                               
+                            ,1,0),
+  
+     covid_gumboots_or_clogs= if_else( gumboots_or_clogs%in%(c(1,2)) | gr_clogs%in%(c(1,2)) | 
+                               clogs%in%(c(1,2)) | gumboots_or_clog%in%(c(1,2)) |
+                               gumboots_pharm%in%(c(1,2)) 
+                               
+                            ,1,0),
+  
+     covid_hair_cover= if_else( hair_cover%in%(c(1,2)) | har%in%(c(1,2)) | 
+                               hair_covr%in%(c(1,2)) | hair_cover_protective%in%(c(1,2)) |
+                               hair_cover_pharm%in%(c(1,2)) 
+                               
+                            ,1,0)
+  
+
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      PIP_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) ),
+      PIP_SARAExtra_score=as.numeric( round((select(.,all_var) %>% rowMeans(na.rm=T))*100,1))
+   )%>%mutate_at( all_var, to_YesNo)
+
+```
+
+
+* <span style="color:red"> Issue 1: </span> We will use OPD as a proxy for storage of sharps, indicative of other departmens and areas, why not others
+* <span style="color:red"> Issue 1: </span> waste_receptacle_bin: >? 
+* <span style="color:red"> Issue 1: </span> single_use_syringe and the rest: Count  If it is available in any department/section TODO: I'm including also Emergency, e.t.c
+
+
+## SARA Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(pip.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'PIP_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+pip.tbl <- 
+  gtsummary::tbl_summary(
+    pip.df%>%select('level', c(aggr_var),'PIP_SARA_score'),
+    by = level, # split table by group
+    type = list('PIP_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Precautions for infection prevention (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+pip.tbl
+
+```
+
+## Non-SARA (Extra) Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(pip.df%>%select('facility_name.factor','facility_type.factor', 'level', c(all_var),'PIP_SARAExtra_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+pip2.tbl <- 
+  gtsummary::tbl_summary(
+    pip.df%>%select('level', c(all_var),'PIP_SARAExtra_score'),
+    by = level, # split table by group
+    type = list('PIP_SARAExtra_score' ~ "continuous2", all_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Precautions for infection prevention (Extra Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,all_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+pip2.tbl
+
+```
+
+
+
 
 
 # Essential Medicines
 
---> TODO:
+**Challenges**
+
+> "1.) the KHFA survey does not take into account the level of facility and does not correspond with the Kenya Essential Medication list by level of facility
+
+> 2.) The Kenya UHC tracer drugs which are of interst to the MOH were not all included in the KHFA survey
+
+> 3.)The KHFA response categories for each drug are many (5 options) making summary and interpretation complex --> how do we dichotomize the responses?  What do we care about for measurement?
+indictor/drug present: response options 1, 3, 
+drug out of stock/not available: 2, 4, 5, 
+
+> 4.) Unclear if part b. of the question (was there a stock out in the last 3 months data was collected.) - in the form only a few have these boxes empty.... was this intentional or an error in survey design?
+
+> 5. Some drugs have multiple formulations asked about - how to handle coding of missing/out of stock if one formulation is"
+
+**Way forward**
+
+> "1. Create coding that incorporates level of facility and if drug is supposed to be in that level (and higher facilities) based on KEML, so that when out of stock drugs are indicated, it is appropriate for that level fo facility.  Note KEML lists the lowest level of facility a drug should be available at, but also indicates that drug should be available at all higher level facilities as well
+
+> 2. create a secondary analysis of stock levels based on UHC tracer drugs (of the ones that were included in KHFA), also incorporating level of facility into if it is out of stock or not
+
+> 3. combine response categories as follows:
+0= not available or expired (responses 2, 4, 5)
+1= available (reported OR observed) (responses 1, 3)
+what to do with response category 5 ""never available""?  guessing this means it is not stocked due to level of facility?
+
+> 4. Lots of missing data on stock out question - this seems like a data collection problem and we should omit this from analysis
+
+> 5. Would include drug as being in stock if any formulation is in stock (ie liquid or tablet should count as that drug being in stock)
+
+> 6. excluding the drugs that are not on KEML (ie not procured) from the drug drug score indicator (crossed off ones)"
+
+
+## SARA Coding (R)
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=T}
+# define on SARA
+aggr_var=c('calcium_channel_blocker', 'amoxicillin', 'ampicillin_powder', 'aspirin', 'beta_blocker','carbamazepine_tablet','ceftriaxone_injection','diazepam_injection',
+'enalapril_tablet','fluoxetine_capsule','gentamycin_injection','haloperidol_tablet',
+'insulin_injection_regular','magnesium_sulphate_inj','metformin_tab_cap','omeprazole_tablet'  ,
+'oral_rehydration','oxytocin_injection','salbutamol_inhaler','simvastatin',
+'thiazide','zinc_sulphate'
+           )
+# define non-SARA (UHC tracer)
+other_var=c('calcium_channel_blocker', 'amoxicillin', 'gentamycin_injection', 'oral_rehydration',
+            'oxytocin_injection','zinc_sulphate', 'hydrocortisone_injection', 'tetracycline','chlorhexidine', 
+            "benzylpenicillin", "paracetamol", "artemether_lumefrantrine",
+            "infusion_normal_saline","adrenaline","cotrimoxazole","metronidazole"
+            )
+# define score vars
+score_var=c('EM_SARA_score','EM_SARAExtra_score','EM_UHC_Tracer_score')
+# combine both sara and non-sara (UHC tracer)
+all_var=unique(c(aggr_var,other_var))
+
+# indicator calculations
+essential_medicines.df = data%>%mutate( 
+   # Step 0: clean daata
+   #neonatal_bag_and_mask_been_unavailable=replace_na(neonatal_bag_and_mask_been_unavailable, 0),
+   
+   # Step 1: aggregate SARA components
+   calcium_channel_blocker = if_else(level_num>=3, # validate level
+                         if_else( calcium_channel_blocker1_e%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   amoxicillin = if_else(level_num>=2,  # validate level
+                         if_else( (amoxicillin_suspension_or___1==1 | amoxicillin_suspension_or___3==1 |
+                                        amoxicillin_capsule_500_mg___1 | amoxicillin_capsule_500_mg___3 |
+                                        amoxicillin_capsule_250_mg___1 | amoxicillin_capsule_250_mg___3
+                                        ),1,0),
+                         NA_real_),
+   
+   ampicillin_powder = if_else(level_num>=4,  # validate level
+                         if_else( (ampicillin_powder_for_inje___1==1 | ampicillin_powder_for_inje___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+    aspirin = if_else(level_num>=2,  # validate level
+                         if_else( (acetylsalicylic_acid1_aspi==1  ),1,0),
+                         NA_real_),
+   
+   beta_blocker = if_else(level_num>=4,  # validate level
+                         if_else( beta_blocker1_e_g_bisoprol%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   carbamazepine_tablet= if_else(level_num>=4,  # validate level
+                         if_else( carbamazepine_tablet1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   ceftriaxone_injection = if_else(level_num>=2,  # validate level
+                         if_else( (ceftriaxone_injection1_2_3___1==1 | ceftriaxone_injection1_2_3___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   diazepam_injection = if_else(level_num>=4,  # validate level
+                         if_else( diazepam_injection1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   enalapril_tablet= if_else(level_num>=3,  # validate level
+                         if_else( enalapril_tablet%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   fluoxetine_capsule = if_else(level_num>=3,  # validate level
+                         if_else( fluoxetine_capsule1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   gentamycin_injection = if_else(level_num>=2,  # validate level
+                         if_else( (gentamycin_injection1_2_3___1==1 | gentamycin_injection1_2_3___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   haloperidol_tablet = if_else(level_num>=3,  # validate level
+                         if_else( haloperidol_tablet1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   insulin_injection_regular = if_else(level_num>=3,  # validate level
+                         if_else( insulin_injection_regular1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   insulin_injection_other_th= if_else(level_num>=4,  # validate level
+                         if_else( insulin_injection_other_th%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   magnesium_sulphate_inj= if_else(level_num>=2,  # validate level
+                         if_else( (magnesium_sulphate_inj_mch___1==1 | magnesium_sulphate_inj_mch___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   metformin_tab_cap= if_else(level_num>=3,  # validate level
+                         if_else( metformin_tab_cap1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   omeprazole_tablet= if_else(level_num>=3,  # validate level
+                         if_else( omeprazole_tablet1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   oral_rehydration= if_else(level_num>=1,  # validate level
+                         if_else( oral_rehydration_salts1_2%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   oxytocin_injection= if_else(level_num>=2,  # validate level
+                         if_else( (oxytocin_injection1_2_3___1==1 | oxytocin_injection1_2_3___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   salbutamol_inhaler= if_else(level_num>=4,  # validate level
+                         if_else( salbutamol_inhaler1%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   simvastatin= if_else(level_num>=4,  # validate level
+                         if_else( statin1_e_g_simvastatin_ta%in%(c(1,3)),1,0),
+                         NA_real_),
+   
+   thiazide= if_else(level_num>=3,  # validate level
+                         if_else( thiazide_diurtetic%in%(c(1,3)),1,0),
+                         NA_real_),  
+   
+   zinc_sulphate = if_else(level_num>=2,  # validate level
+                         if_else( zinc_sulphate_tablet2_3%in%(c(1,3)) | zinc_sulphate_syrup_or_dis%in%(c(1,3)) ,1,0),
+                         NA_real_),
+   
+   
+   
+   
+   # Step 2: aggregate non-SARA components
+   hydrocortisone_injection= if_else(level_num>=2,  # validate level
+                         if_else( hydrocortisone_injection%in%(c(1,3))  ,1,0),
+                         NA_real_),
+   
+   tetracycline= if_else(level_num>=4,  # validate level
+                         if_else( (eye_cream_for_newborn_or_f___1==1 | eye_cream_for_newborn_or_f___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   chlorhexidine= if_else(level_num>=2,  # validate level
+                         if_else( (chlorhexidine_solution_for___1==1 | chlorhexidine_solution_for___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   benzylpenicillin= if_else(level_num>=2,  # validate level
+                         if_else( (procaine_benzylpenicillin___1==1 | procaine_benzylpenicillin___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   paracetamol= if_else(level_num>=2,  # validate level
+                         if_else( acetaminophen_paracetamol%in%(c(1,3))  ,1,0),
+                         NA_real_),
+   
+   artemether_lumefrantrine= if_else(level_num>=1,  # validate level
+                         if_else( (lufrantrine6___1==1 | lufrantrine6___3==1 |
+                                     mether_lumefrantrine12___1==1 | mether_lumefrantrine12___3==1 |
+                                     artelumefrantrine18___1==1 | artelumefrantrine18___3==1 |
+                                     artefrantrine24___1==1 | artefrantrine24___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   infusion_normal_saline= if_else(level_num>=1,  # validate level
+                         if_else( (sodium_chloride_normal_sal___1==1 | sodium_chloride_normal_sal___3==1 |
+                                     dextrose_5_and_normal_sali___1==1 | dextrose_5_and_normal_sali___3==1 
+                                    
+                                        ),1,0),
+                         NA_real_),
+   
+   adrenaline= if_else(level_num>=2,  # validate level
+                         if_else( adrenaline_or_epinephrine%in%(c(1,3))  ,1,0),
+                         NA_real_),
+   
+   cotrimoxazole= if_else(level_num>=2,  # validate level
+                         if_else( (cotrimoxazole_cap_tab___1==1 | cotrimoxazole_cap_tab___3==1 
+                                        ),1,0),
+                         NA_real_),
+   
+   metronidazole= if_else(level_num>=2,  # validate level
+                         if_else( (metronidazole_cap_tab___1==1 | metronidazole_cap_tab___3==1 
+                                        ),1,0),
+                         NA_real_)
+
+   
+   )%>%select(c(base_var, all_var))%>%mutate( 
+       # Step 3: generate scores
+      EM_SARA_score=as.numeric( round((select(.,aggr_var) %>% rowMeans(na.rm=T))*100,1) ),
+      EM_UHC_Tracer_score=as.numeric( round((select(.,other_var) %>% rowMeans(na.rm=T))*100,1) ),
+      EM_SARAExtra_score=as.numeric( round((select(.,all_var) %>% rowMeans(na.rm=T))*100,1))
+   )%>%mutate_at( all_var, to_YesNo)
+
+
+
+
+```
+
+
+
+
+## SARA Essential Medicines Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(essential_medicines.df%>%select('facility_name.factor','facility_type.factor', 'level', c(aggr_var),'EM_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+essential_medicines.tbl <- 
+  gtsummary::tbl_summary(
+    essential_medicines.df%>%select('level', c(aggr_var),'EM_SARA_score'),
+    by = level, # split table by group
+    type = list('EM_SARA_score' ~ "continuous2", aggr_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Essential Medicines (Sara Indicators) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,aggr_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+essential_medicines.tbl
+
+```
+
+## Kenya UHC Tracer Drugs Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(essential_medicines.df%>%select('facility_name.factor','facility_type.factor', 'level', c(all_var),'EM_UHC_Tracer_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+essential_medicines3.tbl <- 
+  gtsummary::tbl_summary(
+    essential_medicines.df%>%select('level', c(all_var),'EM_UHC_Tracer_score'),
+    by = level, # split table by group
+    type = list('EM_UHC_Tracer_score' ~ "continuous2", all_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Kenya UHC Tracer Drugs | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,all_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+essential_medicines3.tbl
+
+```
+
+
+
+## Non-SARA (Extra: SARA + KE UHC) Indicators Tabulation
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+kable(essential_medicines.df%>%select('facility_name.factor','facility_type.factor', 'level', c(all_var),'EM_SARA_score'))
+```
+
+### Disaggregation by facility level
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+border_style = officer::fp_border(color="grey", width=.2, style = "dotted")
+essential_medicines2.tbl <- 
+  gtsummary::tbl_summary(
+    essential_medicines.df%>%select('level', c(all_var),'EM_SARAExtra_score'),
+    by = level, # split table by group
+    type = list('EM_SARAExtra_score' ~ "continuous2", all_var ~"categorical"),
+    statistic = all_continuous() ~ c("{median} ({p25}, {p75})", "{mean} ({sd})"),
+    #missing = "no" # don't list missing data separately
+  ) %>%
+  add_p() %>%
+  add_overall() %>%
+   
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2",  "stat_3") ~ "**Facility Level**") %>%
+  modify_caption("Essential Medicines (SARA + Kenya UHC Tracer) | Disaggregation by level") %>%
+  bold_labels()%>% italicize_levels() %>% bold_p(t = 0.05) %>%
+  as_flex_table()%>%
+  theme_booktabs(bold_header = TRUE)%>%
+  vline(part = "all", j = 2, border = border_style) %>%  
+  vline(part = "all", j = 5, border = border_style) %>%  
+  hline(part = "body", i=  ~ label %in% c(score_var), 
+        border =  officer::fp_border(color="grey", width=.2, style = "solid"))  %>%  
+  bg(., i= ~ label %in% c(score_var,all_var), part = "body", bg = "#f2f9ff") %>% 
+  bg(., i= 1, part = "header", bg = "#f2f9ff") 
+
+essential_medicines2.tbl
+
+```
+
+
+
+
 
 # Maternal health readiness
 
@@ -587,7 +1165,7 @@ other_var=c()
 # define score vars
 score_var=c('MH_SARA_score')
 # combine both sara and non-sara
-all_var=c(aggr_var,other_var)
+all_var=unique(c(aggr_var,other_var))
 # indicator calculations
 marternal_health.df = data%>%mutate( 
    
@@ -621,10 +1199,10 @@ marternal_health.df = data%>%mutate(
 
 ```
 
-* <span style="color:red"> Issue 1: </span>  Check on facility level coding --> might not be accurate
+
 * <span style="color:red"> Issue 2: </span> routine delivery practice  --> is it OR / AND : admn of oxytocin after birth, use of a partograph
 *<span style="color:red"> Issue 3: </span>  what did we say about =REPORTED AVAILABLE BUT NOT SEEN
-*  <span style="color:red"> Issue 4:  </span>  Two   Mukhobola records????
+
 
 *  <span style="color:red"> Issue 5:  have there bee ninterruptions on availability of blood during past 3 months --> fails for all
 *  <span style="color:red"> Issue 5:  professional to doc C-section avaialble 24 hrs? --> fails for all
@@ -636,7 +1214,7 @@ kable(marternal_health.df%>%select('facility_name.factor','facility_type.factor'
 ```
 
 
-* <span style="color:red"> Issue 3: </span>  Check on facility level coding --> might not be accurate
+
 
 
 ### Disaggregation by facility level
@@ -682,12 +1260,14 @@ marternal_health.tbl
 # Overall Service Readiness
 
 ```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
-overall_var=c('BE_SARA_score','BA_SARA_score', 'MH_SARA_score')
+overall_var=c('BE_SARA_score','BA_SARA_score', 'MH_SARA_score', 'DC_SARA_score', 'EM_SARA_score')
 overall.df = basic_equipment.df%>%
          inner_join(basic_amenities.df%>%select('facility_code','BA_SARA_score'),by='facility_code')%>%
          inner_join(marternal_health.df%>%select('facility_code','MH_SARA_score'),by='facility_code')%>%
          inner_join(diagnostic_capacity.df%>%select('facility_code','DC_SARA_score'),by='facility_code')%>%
-         select('facility_name.factor','facility_type.factor', 'level', 'BE_SARA_score', 'BA_SARA_score', 'MH_SARA_score', 'DC_SARA_score')%>%
+         inner_join(essential_medicines.df%>%select('facility_code','EM_SARA_score'),by='facility_code')%>%
+         select('facility_name.factor','facility_type.factor', 'level', 'BE_SARA_score', 'BA_SARA_score', 
+                'MH_SARA_score', 'DC_SARA_score', 'EM_SARA_score')%>%
          mutate( 
                Overall_SARA_score=as.numeric( round((select(.,overall_var) %>% rowMeans(na.rm=T)),1) )
          )
